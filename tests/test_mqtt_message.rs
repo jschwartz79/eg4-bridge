@@ -107,9 +107,137 @@ async fn for_hold_110() {
     assert_eq!(
         mqtt::Message::for_hold(packet).unwrap(),
         vec![mqtt::Message { topic: "2222222222/hold/110".to_owned(), retain: true, payload: "1033".to_owned() },
-             mqtt::Message { topic: "2222222222/hold/110/bits".to_owned(), retain: true, payload: "{\"ub_pv_grid_off_en\":\"ON\",\"ub_run_without_grid\":\"OFF\",\"ub_micro_grid_en\":\"OFF\"}".to_owned() }
+             mqtt::Message { topic: "2222222222/hold/110/bits".to_owned(), retain: true, payload: "{\"ub_pv_grid_off_en\":\"ON\",\"ub_run_without_grid\":\"OFF\",\"ub_micro_grid_en\":\"OFF\",\"ub_bat_shared\":\"ON\",\"ub_chg_last_en\":\"OFF\",\"buzzer_en\":\"OFF\",\"ongrid_working_mode\":\"Self consumption\",\"green_mode_en\":\"OFF\",\"eco_mode_en\":\"OFF\"}".to_owned() }
         ]
     );
+}
+
+#[tokio::test]
+async fn for_hold_120_179_233() {
+    common_setup();
+
+    let inverter = Factory::inverter();
+
+    // Reg 120: ac_charge_type=3 ("By SOC" -> 3<<1=6), discharge_ctrl_type=1 ("By SOC" -> 1<<4=16),
+    // ongrid_eod_type=1 ("By SOC" -> 1<<6=64), gen_charge_type=1 ("By SOC" -> 1<<7=128) => 214 (0x00D6)
+    let packet_120 = eg4::packet::TranslatedData {
+        datalog: inverter.datalog().unwrap(),
+        device_function: eg4::packet::DeviceFunction::ReadHold,
+        inverter: inverter.serial().unwrap(),
+        register: 120,
+        values: 214u16.to_le_bytes().to_vec(),
+    };
+    let msgs_120 = mqtt::Message::for_hold(packet_120).unwrap();
+    assert_eq!(msgs_120.len(), 2);
+    assert_eq!(msgs_120[1].topic, "2222222222/hold/120/bits");
+    let v120: serde_json::Value = serde_json::from_str(&msgs_120[1].payload).unwrap();
+    assert_eq!(v120["ac_charge_type"], "By SOC");
+    assert_eq!(v120["discharge_ctrl_type"], "By SOC");
+    assert_eq!(v120["ongrid_eod_type"], "By SOC");
+    assert_eq!(v120["gen_charge_type"], "By SOC");
+
+    // Reg 179: grid_peak_shaving (bit 7), ac_couple (bit 11), gen_port_mode=Smart load (bit 13)
+    let val_179: u16 = (1 << 7) | (1 << 11) | (1 << 13);
+    let packet_179 = eg4::packet::TranslatedData {
+        datalog: inverter.datalog().unwrap(),
+        device_function: eg4::packet::DeviceFunction::ReadHold,
+        inverter: inverter.serial().unwrap(),
+        register: 179,
+        values: val_179.to_le_bytes().to_vec(),
+    };
+    let msgs_179 = mqtt::Message::for_hold(packet_179).unwrap();
+    assert_eq!(msgs_179.len(), 2);
+    assert_eq!(msgs_179[1].topic, "2222222222/hold/179/bits");
+    let v179: serde_json::Value = serde_json::from_str(&msgs_179[1].payload).unwrap();
+    assert_eq!(v179["grid_peak_shaving_en"], "ON");
+    assert_eq!(v179["ac_couple_en"], "ON");
+    assert_eq!(v179["gen_port_mode"], "Smart load");
+    assert_eq!(v179["gen_peak_shaving_en"], "OFF");
+
+    // Reg 233: battery_backup_ctrl (bit 1) + sporadic_charge (bit 12)
+    let val_233: u16 = (1 << 1) | (1 << 12);
+    let packet_233 = eg4::packet::TranslatedData {
+        datalog: inverter.datalog().unwrap(),
+        device_function: eg4::packet::DeviceFunction::ReadHold,
+        inverter: inverter.serial().unwrap(),
+        register: 233,
+        values: val_233.to_le_bytes().to_vec(),
+    };
+    let msgs_233 = mqtt::Message::for_hold(packet_233).unwrap();
+    assert_eq!(msgs_233.len(), 2);
+    assert_eq!(msgs_233[1].topic, "2222222222/hold/233/bits");
+    let v233: serde_json::Value = serde_json::from_str(&msgs_233[1].payload).unwrap();
+    assert_eq!(v233["battery_backup_ctrl_en"], "ON");
+    assert_eq!(v233["sporadic_charge_en"], "ON");
+}
+
+#[tokio::test]
+async fn for_hold_publishes_time_windows() {
+    common_setup();
+
+    let inverter = Factory::inverter();
+
+    // Regs 209..210 = Peak Shaving slot 1: 16:00 - 21:30
+    let packet = eg4::packet::TranslatedData {
+        datalog: inverter.datalog().unwrap(),
+        device_function: eg4::packet::DeviceFunction::ReadHold,
+        inverter: inverter.serial().unwrap(),
+        register: 209,
+        values: vec![16, 0, 21, 30],
+    };
+    let msgs = mqtt::Message::for_hold(packet).unwrap();
+    assert!(msgs.iter().any(|m| {
+        m.topic == "2222222222/peak_shaving/1"
+            && m.retain
+            && m.payload == r#"{"end":"21:30","start":"16:00"}"#
+    }));
+}
+
+#[tokio::test]
+async fn to_command_eg4_6000xp_controls() {
+    common_setup();
+    let inverter = Factory::inverter();
+
+    let msg = mqtt::Message {
+        topic: "cmd/2222222222/set/ac_charge_type".to_string(),
+        retain: false,
+        payload: "SOC + time".to_string(),
+    };
+    match msg.to_command(inverter.clone()).unwrap() {
+        eg4_bridge::command::Command::UpdateHoldBitfield(_, reg, mask, val) => {
+            assert_eq!(reg, 120);
+            assert_eq!(mask, 0x0E);
+            assert_eq!(val, 5 << 1);
+        }
+        other => panic!("unexpected command: {:?}", other),
+    }
+
+    let msg = mqtt::Message {
+        topic: "cmd/2222222222/set/gen_port_mode".to_string(),
+        retain: false,
+        payload: "Smart load".to_string(),
+    };
+    match msg.to_command(inverter.clone()).unwrap() {
+        eg4_bridge::command::Command::UpdateHoldBitfield(_, reg, mask, val) => {
+            assert_eq!(reg, 179);
+            assert_eq!(mask, 1 << 13);
+            assert_eq!(val, 1 << 13);
+        }
+        other => panic!("unexpected command: {:?}", other),
+    }
+
+    let msg = mqtt::Message {
+        topic: "cmd/2222222222/set/peak_shaving/1".to_string(),
+        retain: false,
+        payload: r#"{"start":"15:00","end":"20:00"}"#.to_string(),
+    };
+    match msg.to_command(inverter).unwrap() {
+        eg4_bridge::command::Command::SetPeakShavingTime(_, slot, vals) => {
+            assert_eq!(slot, 1);
+            assert_eq!(vals, [15, 0, 20, 0]);
+        }
+        other => panic!("unexpected command: {:?}", other),
+    }
 }
 
 #[tokio::test]

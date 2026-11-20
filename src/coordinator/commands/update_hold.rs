@@ -9,8 +9,8 @@ pub struct UpdateHold {
     channels: Channels,
     inverter: config::Inverter,
     register: u16,
-    bit: RegisterBit,
-    enable: bool,
+    mask: u16,
+    value: u16,
 }
 
 impl UpdateHold {
@@ -21,16 +21,42 @@ impl UpdateHold {
         bit: RegisterBit,
         enable: bool,
     ) -> Self {
+        let mask = bit as u16;
+        let value = if enable { mask } else { 0 };
         Self {
             channels,
             inverter,
             register,
-            bit,
-            enable,
+            mask,
+            value,
+        }
+    }
+
+    pub fn new_bitfield(
+        channels: Channels,
+        inverter: config::Inverter,
+        register: u16,
+        mask: u16,
+        shifted_value: u16,
+    ) -> Self {
+        Self {
+            channels,
+            inverter,
+            register,
+            mask,
+            value: shifted_value & mask,
         }
     }
 
     pub async fn run(&self) -> Result<()> {
+        if self.inverter.read_only() {
+            bail!(
+                "Cannot update hold register {} - inverter {} is in read-only mode",
+                self.register,
+                self.inverter.datalog().map(|s| s.to_string()).unwrap_or_default()
+            );
+        }
+
         let mut receiver = self.channels.from_inverter.subscribe();
 
         // First read the current value
@@ -49,11 +75,7 @@ impl UpdateHold {
 
         let read_packet = receiver.wait_for_reply(&read_packet).await?;
         let current_value = read_packet.value();
-        let new_value = if self.enable {
-            current_value | (self.bit.clone() as u16)
-        } else {
-            current_value & !(self.bit.clone() as u16)
-        };
+        let new_value = (current_value & !self.mask) | (self.value & self.mask);
 
         // Now write the new value
         let write_packet = Packet::TranslatedData(TranslatedData {

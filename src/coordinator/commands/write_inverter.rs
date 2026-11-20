@@ -40,7 +40,7 @@ impl WriteInverter {
     pub async fn set_ac_charge_rate(&self, value: u16) -> Result<()> {
         info!("Setting AC charge rate to {} for inverter {}", value, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_hold(0x0102_u16, value).await
+        self.set_hold(crate::eg4::packet::Register::AcChargePowerCmd, value).await
     }
 
     /// Write operation: Sets AC charge SOC limit
@@ -48,31 +48,31 @@ impl WriteInverter {
     pub async fn set_ac_charge_soc_limit(&self, value: u16) -> Result<()> {
         info!("Setting AC charge SOC limit to {} for inverter {}", value, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_hold(0x0103_u16, value).await
+        self.set_hold(crate::eg4::packet::Register::AcChargeSocLimit, value).await
     }
 
     /// Write operation: Sets AC charge time
     /// Blocked by read_only setting
-    pub async fn set_ac_charge_time(&self, values: [u8; 4]) -> Result<()> {
-        info!("Setting AC charge time to {:?} for inverter {}", values, self.inverter.datalog().unwrap_or_default());
+    pub async fn set_ac_charge_time(&self, num: u16, values: [u8; 4]) -> Result<()> {
+        info!("Setting AC charge time slot {} to {:?} for inverter {}", num, values, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_time_register(time_register_ops::Action::AcCharge(0), values).await
+        self.set_time_register(time_register_ops::Action::AcCharge(num), values).await
     }
 
     /// Write operation: Sets AC first time
     /// Blocked by read_only setting
-    pub async fn set_ac_first_time(&self, values: [u8; 4]) -> Result<()> {
-        info!("Setting AC first time to {:?} for inverter {}", values, self.inverter.datalog().unwrap_or_default());
+    pub async fn set_ac_first_time(&self, num: u16, values: [u8; 4]) -> Result<()> {
+        info!("Setting AC first time slot {} to {:?} for inverter {}", num, values, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_time_register(time_register_ops::Action::AcFirst(0), values).await
+        self.set_time_register(time_register_ops::Action::AcFirst(num), values).await
     }
 
     /// Write operation: Sets charge priority time
     /// Blocked by read_only setting
-    pub async fn set_charge_priority_time(&self, values: [u8; 4]) -> Result<()> {
-        info!("Setting charge priority time to {:?} for inverter {}", values, self.inverter.datalog().unwrap_or_default());
+    pub async fn set_charge_priority_time(&self, num: u16, values: [u8; 4]) -> Result<()> {
+        info!("Setting charge priority time slot {} to {:?} for inverter {}", num, values, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_time_register(time_register_ops::Action::ChargePriority(0), values).await
+        self.set_time_register(time_register_ops::Action::ChargePriority(num), values).await
     }
 
     /// Write operation: Sets charge rate
@@ -80,7 +80,7 @@ impl WriteInverter {
     pub async fn set_charge_rate(&self, value: u16) -> Result<()> {
         info!("Setting charge rate to {} for inverter {}", value, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_hold(0x0100_u16, value).await
+        self.set_hold(crate::eg4::packet::Register::ChargePowerPercentCmd, value).await
     }
 
     /// Write operation: Sets discharge cutoff SOC limit
@@ -88,7 +88,7 @@ impl WriteInverter {
     pub async fn set_discharge_cutoff_soc_limit(&self, value: u16) -> Result<()> {
         info!("Setting discharge cutoff SOC limit to {} for inverter {}", value, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_hold(0x0104_u16, value).await
+        self.set_hold(crate::eg4::packet::Register::DischgCutOffSocEod, value).await
     }
 
     /// Write operation: Sets discharge rate
@@ -96,15 +96,23 @@ impl WriteInverter {
     pub async fn set_discharge_rate(&self, value: u16) -> Result<()> {
         info!("Setting discharge rate to {} for inverter {}", value, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_hold(0x0101_u16, value).await
+        self.set_hold(crate::eg4::packet::Register::DischgPowerPercentCmd, value).await
     }
 
     /// Write operation: Sets forced discharge time
     /// Blocked by read_only setting
-    pub async fn set_forced_discharge_time(&self, values: [u8; 4]) -> Result<()> {
-        info!("Setting forced discharge time to {:?} for inverter {}", values, self.inverter.datalog().unwrap_or_default());
+    pub async fn set_forced_discharge_time(&self, num: u16, values: [u8; 4]) -> Result<()> {
+        info!("Setting forced discharge time slot {} to {:?} for inverter {}", num, values, self.inverter.datalog().unwrap_or_default());
         self.check_read_only()?;
-        self.set_time_register(time_register_ops::Action::ForcedDischarge(0), values).await
+        self.set_time_register(time_register_ops::Action::ForcedDischarge(num), values).await
+    }
+
+    /// Write operation: Sets peak shaving time
+    /// Blocked by read_only setting
+    pub async fn set_peak_shaving_time(&self, num: u16, values: [u8; 4]) -> Result<()> {
+        info!("Setting peak shaving time slot {} to {:?} for inverter {}", num, values, self.inverter.datalog().unwrap_or_default());
+        self.check_read_only()?;
+        self.set_time_register(time_register_ops::Action::PeakShaving(num), values).await
     }
 
     /// Write operation: Sets a holding register value

@@ -594,6 +594,18 @@ impl Coordinator {
                     None
                 };
 
+                let aggregated_input_all = if td.device_function == DeviceFunction::ReadInput {
+                    match self.aggregate_input_all(td.datalog, parsed_input.as_ref()) {
+                        Ok(all) => all,
+                        Err(e) => {
+                            error!("Failed to aggregate input blocks: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 // Skip heartbeat packets for InfluxDB
                 if !matches!(td.device_function, DeviceFunction::WriteSingle | DeviceFunction::WriteMulti) {
                     // Send to InfluxDB
@@ -603,7 +615,7 @@ impl Coordinator {
                 }
 
                 // Send to databases (e.g. PostgreSQL) when input blocks can be decoded.
-                if let Err(e) = self.send_to_database(&td, parsed_input.as_ref()) {
+                if let Err(e) = self.send_to_database(aggregated_input_all.as_ref()) {
                     error!("Failed to send data to database channel: {}", e);
                 }
 
@@ -613,7 +625,7 @@ impl Coordinator {
                 }
 
                 // Send to MQTT
-                if let Err(e) = self.send_to_mqtt(&td, parsed_input.as_ref()).await {
+                if let Err(e) = self.send_to_mqtt(&td, parsed_input.as_ref(), aggregated_input_all.as_ref()).await {
                     error!("Failed to send data to MQTT: {}", e);
                 }
             }
@@ -696,11 +708,13 @@ impl Coordinator {
             Command::AcChargeSocLimit(inv, _) |
             Command::DischargeCutoffSocLimit(inv, _) |
             Command::SetHold(inv, _, _) |
+            Command::UpdateHoldBitfield(inv, _, _, _) |
             Command::WriteParam(inv, _, _) |
             Command::SetAcChargeTime(inv, _, _) |
             Command::SetAcFirstTime(inv, _, _) |
             Command::SetChargePriorityTime(inv, _, _) |
             Command::SetForcedDischargeTime(inv, _, _) |
+            Command::SetPeakShavingTime(inv, _, _) |
             Command::ReadInputs(inv, _) |
             Command::ReadInput(inv, _, _) |
             Command::ReadHold(inv, _, _) |
@@ -709,6 +723,7 @@ impl Coordinator {
             Command::ReadAcFirstTime(inv, _) |
             Command::ReadChargePriorityTime(inv, _) |
             Command::ReadForcedDischargeTime(inv, _) |
+            Command::ReadPeakShavingTime(inv, _) |
             Command::AcCharge(inv, _) |
             Command::ChargePriority(inv, _) |
             Command::ForcedDischarge(inv, _) => inv.clone(),
@@ -728,11 +743,26 @@ impl Coordinator {
             Command::AcChargeSocLimit(_, value) => write_inverter.set_ac_charge_soc_limit(value).await,
             Command::DischargeCutoffSocLimit(_, value) => write_inverter.set_discharge_cutoff_soc_limit(value).await,
             Command::SetHold(_, register, value) => write_inverter.set_hold(register, value).await,
+            Command::UpdateHoldBitfield(_, register, mask, value) => {
+                if self.config.read_only() || inverter.read_only() {
+                    bail!("Write operations are disabled in read-only mode");
+                }
+                commands::update_hold::UpdateHold::new_bitfield(
+                    self.channels.clone(),
+                    inverter,
+                    register,
+                    mask,
+                    value,
+                )
+                .run()
+                .await
+            }
             Command::WriteParam(_, register, value) => write_inverter.set_param(register, value).await,
-            Command::SetAcChargeTime(_, _, values) => write_inverter.set_ac_charge_time(values).await,
-            Command::SetAcFirstTime(_, _, values) => write_inverter.set_ac_first_time(values).await,
-            Command::SetChargePriorityTime(_, _, values) => write_inverter.set_charge_priority_time(values).await,
-            Command::SetForcedDischargeTime(_, _, values) => write_inverter.set_forced_discharge_time(values).await,
+            Command::SetAcChargeTime(_, num, values) => write_inverter.set_ac_charge_time(num, values).await,
+            Command::SetAcFirstTime(_, num, values) => write_inverter.set_ac_first_time(num, values).await,
+            Command::SetChargePriorityTime(_, num, values) => write_inverter.set_charge_priority_time(num, values).await,
+            Command::SetForcedDischargeTime(_, num, values) => write_inverter.set_forced_discharge_time(num, values).await,
+            Command::SetPeakShavingTime(_, num, values) => write_inverter.set_peak_shaving_time(num, values).await,
             
             // Read operations - these are always allowed regardless of read_only mode
             Command::ReadInputs(_, block) => self.read_input_block(&inverter, block * 40, inverter.register_block_size()).await,
@@ -743,9 +773,13 @@ impl Coordinator {
             Command::ReadAcFirstTime(_, num) => self.read_ac_first_time(&inverter, num).await,
             Command::ReadChargePriorityTime(_, num) => self.read_charge_priority_time(&inverter, num).await,
             Command::ReadForcedDischargeTime(_, num) => self.read_forced_discharge_time(&inverter, num).await,
+            Command::ReadPeakShavingTime(_, num) => self.read_peak_shaving_time(&inverter, num).await,
             
             // Enable/Disable operations - these are blocked by read_only mode
             Command::AcCharge(_, enable) => {
+                if self.config.read_only() || inverter.read_only() {
+                    bail!("Write operations are disabled in read-only mode");
+                }
                 self.update_hold(
                     inverter,
                     Register::Register21,
@@ -754,6 +788,9 @@ impl Coordinator {
                 ).await
             },
             Command::ChargePriority(_, enable) => {
+                if self.config.read_only() || inverter.read_only() {
+                    bail!("Write operations are disabled in read-only mode");
+                }
                 self.update_hold(
                     inverter,
                     Register::Register21,
@@ -762,6 +799,9 @@ impl Coordinator {
                 ).await
             },
             Command::ForcedDischarge(_, enable) => {
+                if self.config.read_only() || inverter.read_only() {
+                    bail!("Write operations are disabled in read-only mode");
+                }
                 self.update_hold(
                     inverter,
                     Register::Register21,
@@ -881,6 +921,40 @@ impl Coordinator {
 
     async fn inverter_connected(&mut self, datalog: Serial) -> Result<()> {
         info!("Inverter {} connected", datalog);
+
+        if let Some(inverter) = self.config.enabled_inverter_with_datalog(datalog) {
+            if inverter.publish_holdings_on_connect() {
+                let channels = self.channels.clone();
+                tokio::spawn(async move {
+                    info!("Reading holding registers on connect for inverter {}", datalog);
+                    for start_register in (0u16..=200).step_by(40) {
+                        if let Err(e) = commands::read_hold::ReadHold::new(
+                            channels.clone(),
+                            inverter.clone(),
+                            start_register,
+                            40,
+                        )
+                        .run()
+                        .await
+                        {
+                            warn!(
+                                "Failed to read holding block {}..{} on connect for {}: {}",
+                                start_register,
+                                start_register + 39,
+                                datalog,
+                                e
+                            );
+                        }
+                        if let Some(delay_ms) = inverter.delay_ms() {
+                            if delay_ms > 0 {
+                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
         Ok(())
     }
 
@@ -944,12 +1018,17 @@ impl Coordinator {
         Ok(())
     }
 
-    async fn send_to_mqtt(&self, data: &TranslatedData, parsed_input: Option<&ReadInput>) -> Result<()> {
+    async fn send_to_mqtt(
+        &self,
+        data: &TranslatedData,
+        parsed_input: Option<&ReadInput>,
+        aggregated_input_all: Option<&crate::eg4::packet::ReadInputAll>,
+    ) -> Result<()> {
         if !self.config.mqtt().enabled() {
             return Ok(());
         }
-        let messages = match data.device_function {
-            DeviceFunction::ReadHold | DeviceFunction::ReadHoldError => {
+        let mut messages = match data.device_function {
+            DeviceFunction::ReadHold | DeviceFunction::ReadHoldError | DeviceFunction::WriteSingle => {
                 mqtt::Message::for_hold(data.clone())?
             }
             _ => mqtt::Message::for_input_with_parsed(
@@ -958,6 +1037,15 @@ impl Coordinator {
                 parsed_input.cloned(),
             )?,
         };
+
+        // When 6-block input aggregation completes, publish `{datalog}/inputs/all` to MQTT
+        // so Home Assistant sensors update even when no SQL database is configured.
+        if !matches!(parsed_input, Some(ReadInput::ReadInputAll(_))) {
+            if let Some(input_all) = aggregated_input_all {
+                messages.push(mqtt::Message::for_input_all(input_all, data.datalog)?);
+            }
+        }
+
         for message in messages {
             self.channels.to_mqtt.send(mqtt::ChannelData::Message(message))?;
         }
@@ -977,39 +1065,46 @@ impl Coordinator {
         Ok(entry.to_input_all())
     }
 
-    fn send_to_database(&self, data: &TranslatedData, parsed_input: Option<&ReadInput>) -> Result<()> {
+    fn aggregate_input_all(
+        &self,
+        datalog: Serial,
+        parsed_input: Option<&ReadInput>,
+    ) -> Result<Option<crate::eg4::packet::ReadInputAll>> {
+        let Some(parsed) = parsed_input else {
+            return Ok(None);
+        };
+
+        let maybe_input_all = match parsed.clone() {
+            ReadInput::ReadInputAll(input_all) => Some(*input_all),
+            ReadInput::ReadInput1(r1) => self.update_inputs_store(datalog, |entry| entry.set_read_input_1(r1))?,
+            ReadInput::ReadInput2(r2) => self.update_inputs_store(datalog, |entry| entry.set_read_input_2(r2))?,
+            ReadInput::ReadInput3(r3) => self.update_inputs_store(datalog, |entry| entry.set_read_input_3(r3))?,
+            ReadInput::ReadInput4(r4) => self.update_inputs_store(datalog, |entry| entry.set_read_input_4(r4))?,
+            ReadInput::ReadInput5(r5) => self.update_inputs_store(datalog, |entry| entry.set_read_input_5(r5))?,
+            ReadInput::ReadInput6(r6) => self.update_inputs_store(datalog, |entry| entry.set_read_input_6(r6))?,
+        };
+
+        if maybe_input_all.is_some() {
+            let _ = self
+                .inputs_store
+                .lock()
+                .map_err(|_| anyhow!("Failed to lock input store"))?
+                .remove(&datalog);
+        }
+
+        Ok(maybe_input_all)
+    }
+
+    fn send_to_database(&self, aggregated_input_all: Option<&crate::eg4::packet::ReadInputAll>) -> Result<()> {
         if self.databases.is_empty() {
             debug!("No databases configured, skipping send");
             return Ok(());
         }
 
-        if data.device_function != DeviceFunction::ReadInput {
-            return Ok(());
-        }
-
-        let Some(parsed) = parsed_input else {
-            return Ok(());
-        };
-
-        let maybe_input_all = match parsed.clone() {
-            ReadInput::ReadInputAll(input_all) => Some(*input_all),
-            ReadInput::ReadInput1(r1) => self.update_inputs_store(data.datalog, |entry| entry.set_read_input_1(r1))?,
-            ReadInput::ReadInput2(r2) => self.update_inputs_store(data.datalog, |entry| entry.set_read_input_2(r2))?,
-            ReadInput::ReadInput3(r3) => self.update_inputs_store(data.datalog, |entry| entry.set_read_input_3(r3))?,
-            ReadInput::ReadInput4(r4) => self.update_inputs_store(data.datalog, |entry| entry.set_read_input_4(r4))?,
-            ReadInput::ReadInput5(r5) => self.update_inputs_store(data.datalog, |entry| entry.set_read_input_5(r5))?,
-            ReadInput::ReadInput6(r6) => self.update_inputs_store(data.datalog, |entry| entry.set_read_input_6(r6))?,
-        };
-
-        if let Some(input_all) = maybe_input_all {
-            let _ = self
-                .inputs_store
-                .lock()
-                .map_err(|_| anyhow!("Failed to lock input store"))?
-                .remove(&data.datalog);
+        if let Some(input_all) = aggregated_input_all {
             self.channels
                 .to_database
-                .send(database::ChannelData::ReadInputAll(Box::new(input_all)))
+                .send(database::ChannelData::ReadInputAll(Box::new(input_all.clone())))
                 .map_err(|e| anyhow!("Failed to send data to database channel: {}", e))?;
         }
 
@@ -1018,6 +1113,10 @@ impl Coordinator {
 
     async fn read_forced_discharge_time(&self, inverter: &config::Inverter, num: u16) -> Result<()> {
         self.read_time_register(inverter, Action::ForcedDischarge(num)).await
+    }
+
+    async fn read_peak_shaving_time(&self, inverter: &config::Inverter, num: u16) -> Result<()> {
+        self.read_time_register(inverter, Action::PeakShaving(num)).await
     }
 
     async fn update_hold(&self, inverter: config::Inverter, register: Register, bit: RegisterBit, enable: bool) -> Result<()> {

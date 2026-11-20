@@ -35,8 +35,10 @@ impl Message {
 
     pub fn for_hold(td: crate::eg4::packet::TranslatedData) -> Result<Vec<Message>> {
         let mut r = Vec::new();
+        let pairs = td.pairs();
+        let pair_map: std::collections::HashMap<u16, u16> = pairs.iter().copied().collect();
 
-        for (register, value) in td.pairs() {
+        for (register, value) in pairs {
             r.push(mqtt::Message {
                 topic: format!("{}/hold/{}", td.datalog, register),
                 retain: true,
@@ -58,6 +60,68 @@ impl Message {
                     topic: format!("{}/hold/{}/bits", td.datalog, register),
                     retain: true,
                     payload: serde_json::to_string(&bits)?,
+                });
+            }
+
+            if register == 120 {
+                let bits = crate::eg4::packet::Register120Bits::new(value);
+                r.push(mqtt::Message {
+                    topic: format!("{}/hold/{}/bits", td.datalog, register),
+                    retain: true,
+                    payload: serde_json::to_string(&bits)?,
+                });
+            }
+
+            if register == 179 {
+                let bits = crate::eg4::packet::Register179Bits::new(value);
+                r.push(mqtt::Message {
+                    topic: format!("{}/hold/{}/bits", td.datalog, register),
+                    retain: true,
+                    payload: serde_json::to_string(&bits)?,
+                });
+            }
+
+            if register == 233 {
+                let bits = crate::eg4::packet::Register233Bits::new(value);
+                r.push(mqtt::Message {
+                    topic: format!("{}/hold/{}/bits", td.datalog, register),
+                    retain: true,
+                    payload: serde_json::to_string(&bits)?,
+                });
+            }
+        }
+
+        // Automatically publish formatted start/end time JSON when complete time-window register
+        // pairs appear in a holding register block read (e.g. publish_holdings_on_connect).
+        const TIME_WINDOWS: &[(u16, &str)] = &[
+            (68, "ac_charge/1"),
+            (70, "ac_charge/2"),
+            (72, "ac_charge/3"),
+            (76, "charge_priority/1"),
+            (78, "charge_priority/2"),
+            (80, "charge_priority/3"),
+            (84, "forced_discharge/1"),
+            (86, "forced_discharge/2"),
+            (88, "forced_discharge/3"),
+            (152, "ac_first/1"),
+            (154, "ac_first/2"),
+            (156, "ac_first/3"),
+            (209, "peak_shaving/1"),
+            (211, "peak_shaving/2"),
+        ];
+
+        for &(start_reg, name) in TIME_WINDOWS {
+            if let (Some(&start_val), Some(&end_val)) = (pair_map.get(&start_reg), pair_map.get(&(start_reg + 1))) {
+                let start_bytes = start_val.to_le_bytes();
+                let end_bytes = end_val.to_le_bytes();
+                let payload = serde_json::json!({
+                    "start": format!("{:02}:{:02}", start_bytes[0], start_bytes[1]),
+                    "end": format!("{:02}:{:02}", end_bytes[0], end_bytes[1]),
+                });
+                r.push(mqtt::Message {
+                    topic: format!("{}/{}", td.datalog, name),
+                    retain: true,
+                    payload: payload.to_string(),
                 });
             }
         }
@@ -271,6 +335,7 @@ impl Message {
             ["read", "ac_first", num] => ReadAcFirstTime(inverter, num.parse()?),
             ["read", "charge_priority", num] => ReadChargePriorityTime(inverter, num.parse()?),
             ["read", "forced_discharge", num] => ReadForcedDischargeTime(inverter, num.parse()?),
+            ["read", "peak_shaving", num] => ReadPeakShavingTime(inverter, num.parse()?),
             ["set", "hold", register] => SetHold(inverter, register.parse()?, self.payload_int()?),
             ["set", "param", register] => {
                 WriteParam(inverter, register.parse()?, self.payload_int()?)
@@ -290,6 +355,102 @@ impl Message {
             ["set", "forced_discharge", num] => {
                 SetForcedDischargeTime(inverter, num.parse()?, self.payload_start_end_time()?)
             }
+            ["set", "peak_shaving", num] => {
+                SetPeakShavingTime(inverter, num.parse()?, self.payload_start_end_time()?)
+            }
+            // Register 21 bit switches
+            ["set", "eps"] => self.bit_cmd(inverter, 21, 0),
+            ["set", "seamless_eps_switch"] => self.bit_cmd(inverter, 21, 8),
+            ["set", "set_to_standby"] => self.bit_cmd(inverter, 21, 9),
+            ["set", "feed_in_grid"] => self.bit_cmd(inverter, 21, 15),
+            // Register 110 bit switches & selects
+            ["set", "fast_zero_export"] => self.bit_cmd(inverter, 110, 1),
+            ["set", "micro_grid"] => self.bit_cmd(inverter, 110, 2),
+            ["set", "bat_shared"] => self.bit_cmd(inverter, 110, 3),
+            ["set", "charge_last"] => self.bit_cmd(inverter, 110, 4),
+            ["set", "buzzer"] => self.bit_cmd(inverter, 110, 7),
+            ["set", "ongrid_working_mode"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "self consumption" | "self_consumption" => 0,
+                    "1" | "charge first" | "charge_first" => 1,
+                    _ => bail!("invalid ongrid_working_mode: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 110, 1 << 11, val << 11)
+            }
+            ["set", "green_mode"] => self.bit_cmd(inverter, 110, 14),
+            ["set", "eco_mode"] => self.bit_cmd(inverter, 110, 15),
+            // Register 120 bitfield selects & switches
+            ["set", "half_hour_ac_chg_start"] => self.bit_cmd(inverter, 120, 0),
+            ["set", "ac_charge_type"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "disabled" => 0,
+                    "1" | "by time" => 1,
+                    "2" | "by voltage" => 2,
+                    "3" | "by soc" => 3,
+                    "4" | "voltage + time" => 4,
+                    "5" | "soc + time" => 5,
+                    _ => bail!("invalid ac_charge_type: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 120, 0x07 << 1, val << 1)
+            }
+            ["set", "discharge_ctrl_type"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "by voltage" => 0,
+                    "1" | "by soc" => 1,
+                    "2" | "both" => 2,
+                    _ => bail!("invalid discharge_ctrl_type: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 120, 0x03 << 4, val << 4)
+            }
+            ["set", "ongrid_eod_type"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "by voltage" => 0,
+                    "1" | "by soc" => 1,
+                    _ => bail!("invalid ongrid_eod_type: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 120, 1 << 6, val << 6)
+            }
+            ["set", "gen_charge_type"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "by voltage" => 0,
+                    "1" | "by soc" => 1,
+                    _ => bail!("invalid gen_charge_type: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 120, 1 << 7, val << 7)
+            }
+            // Register 179 bit switches & selects
+            ["set", "bat_wakeup"] => self.bit_cmd(inverter, 179, 3),
+            ["set", "volt_watt"] => self.bit_cmd(inverter, 179, 4),
+            ["set", "grid_peak_shaving"] => self.bit_cmd(inverter, 179, 7),
+            ["set", "gen_peak_shaving"] => self.bit_cmd(inverter, 179, 8),
+            ["set", "ac_couple_ctrl_type"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "by soc" => 0,
+                    "1" | "by voltage" => 1,
+                    _ => bail!("invalid ac_couple_ctrl_type: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 179, 1 << 9, val << 9)
+            }
+            ["set", "bat_discharge_ctrl_type"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "by soc" => 0,
+                    "1" | "by voltage" => 1,
+                    _ => bail!("invalid bat_discharge_ctrl_type: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 179, 1 << 10, val << 10)
+            }
+            ["set", "ac_couple"] => self.bit_cmd(inverter, 179, 11),
+            ["set", "gen_port_mode"] => {
+                let val: u16 = match self.payload.trim().to_ascii_lowercase().as_str() {
+                    "0" | "generator" => 0,
+                    "1" | "smart load" | "smart_load" => 1,
+                    _ => bail!("invalid gen_port_mode: {}", self.payload),
+                };
+                UpdateHoldBitfield(inverter, 179, 1 << 13, val << 13)
+            }
+            // Register 233 bit switches
+            ["set", "battery_backup_ctrl"] => self.bit_cmd(inverter, 233, 1),
+            ["set", "sporadic_charge"] => self.bit_cmd(inverter, 233, 12),
             ["set", "charge_rate_pct"] => ChargeRate(inverter, self.payload_int()?),
             ["set", "discharge_rate_pct"] => DischargeRate(inverter, self.payload_int()?),
             ["set", "ac_charge_rate_pct"] => AcChargeRate(inverter, self.payload_int()?),
@@ -360,6 +521,12 @@ impl Message {
         self.payload
             .parse()
             .map_err(|err| anyhow!("payload_int: {}", err))
+    }
+
+    fn bit_cmd(&self, inverter: config::Inverter, register: u16, bit: u16) -> Command {
+        let mask = 1u16 << bit;
+        let value = if self.payload_bool() { mask } else { 0 };
+        Command::UpdateHoldBitfield(inverter, register, mask, value)
     }
 
     fn payload_bool(&self) -> bool {

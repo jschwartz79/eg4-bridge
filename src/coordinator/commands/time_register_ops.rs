@@ -25,6 +25,7 @@ pub enum Action {
     AcFirst(u16),
     ChargePriority(u16),
     ForcedDischarge(u16),
+    PeakShaving(u16),
 }
 
 impl Action {
@@ -43,6 +44,8 @@ impl Action {
             ForcedDischarge(1) => Ok(84),
             ForcedDischarge(2) => Ok(86),
             ForcedDischarge(3) => Ok(88),
+            PeakShaving(1) => Ok(209),
+            PeakShaving(2) => Ok(211),
             _ => bail!("unsupported command"),
         }
     }
@@ -55,6 +58,7 @@ impl Action {
             AcFirst(n) => format!("{}/ac_first/{}", datalog, n),
             ChargePriority(n) => format!("{}/charge_priority/{}", datalog, n),
             ForcedDischarge(n) => format!("{}/forced_discharge/{}", datalog, n),
+            PeakShaving(n) => format!("{}/peak_shaving/{}", datalog, n),
         }
     }
 }

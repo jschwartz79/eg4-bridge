@@ -384,11 +384,11 @@ impl ReadInputAll {
             return Err(anyhow!("Invalid PV power values"));
         }
 
-        // Validate frequencies
-        if self.f_ac < 45.0 || self.f_ac > 65.0 {
+        // Validate frequencies (0.0 is valid when off-grid / AC disconnected or in standby)
+        if self.f_ac > 0.0 && (self.f_ac < 45.0 || self.f_ac > 65.0) {
             return Err(anyhow!("Invalid AC frequency: {}", self.f_ac));
         }
-        if self.f_eps < 45.0 || self.f_eps > 65.0 {
+        if self.f_eps > 0.0 && (self.f_eps < 45.0 || self.f_eps > 65.0) {
             return Err(anyhow!("Invalid EPS frequency: {}", self.f_eps));
         }
 
@@ -1326,27 +1326,82 @@ pub enum Register {
     PowerSoftStartSlope = 63,   // Power soft start slope
 
     // ... existing registers ...
-    Register21 = 21,             // Function enable/disable flags
-    ChargePowerPercentCmd = 64,  // System Charge Rate (%)
-    DischgPowerPercentCmd = 65,  // System Discharge Rate (%)
-    AcChargePowerCmd = 66,       // Grid Charge Power Rate (%)
-    AcChargeSocLimit = 67,       // AC Charge SOC Limit (%)
-    ChargePriorityPowerCmd = 74, // Charge Priority Charge Rate (%)
-    ChargePrioritySocLimit = 75, // Charge Priority SOC Limit (%)
-    ForcedDischgSocLimit = 83,   // Forced Discharge SOC Limit (%)
-    DischgCutOffSocEod = 105,    // Discharge cut-off SOC (%)
-    EpsDischgCutoffSocEod = 125, // EPS Discharge cut-off SOC (%)
-    AcChargeStartSocLimit = 160, // SOC at which AC charging will begin (%)
-    AcChargeEndSocLimit = 161,   // SOC at which AC charging will end (%)
+    Register21 = 21,               // Function enable/disable flags
+    ChargePowerPercentCmd = 64,    // System Charge Rate (%)
+    DischgPowerPercentCmd = 65,    // System Discharge Rate (%)
+    AcChargePowerCmd = 66,         // Grid Charge Power Rate (%)
+    AcChargeSocLimit = 67,         // AC Charge SOC Limit (%)
+    ChargePriorityPowerCmd = 74,   // Charge Priority Charge Rate (%)
+    ChargePrioritySocLimit = 75,   // Charge Priority SOC Limit (%)
+    ForcedDischgPowerCmd = 82,     // Forced Discharge Power Rate (%)
+    ForcedDischgSocLimit = 83,     // Forced Discharge SOC Limit (%)
+    EpsVoltageSet = 90,            // Off-grid EPS output voltage (V)
+    EpsFreqSet = 91,               // Off-grid EPS output frequency (Hz)
+    ChargeVoltRef = 99,            // Lead-acid charge voltage reference (0.1V)
+    CutVoltForDischg = 100,        // Lead-acid discharge cut-off voltage (0.1V)
+    ChargeCurr = 101,              // Max charge current limit (A)
+    DischgCurr = 102,              // Max discharge current limit (A)
+    MaxBackFlow = 103,             // Feed-in grid export power limit (%)
+    DischgCutOffSocEod = 105,      // Discharge cut-off SOC (%)
+    Register110 = 110,             // System function enable flags (FunctionEn1)
+    Register120 = 120,             // System enable / charge & discharge control types
+    EpsDischgCutoffSocEod = 125,   // EPS Discharge cut-off SOC (%)
+    FloatChargeVolt = 144,         // Float charge voltage (0.1V)
+    OutputPrioConfig = 145,        // Output priority (0=Bat first, 1=PV first, 2=AC first)
+    LineMode = 146,                // AC input range (0=APL, 1=UPS, 2=GEN)
+    BatteryCapacity = 147,         // Battery capacity for unmatched batteries (Ah)
+    BatteryNominalVolt = 148,      // Battery nominal voltage (0.1V)
+    EqualizationVolt = 149,        // Battery equalization voltage (0.1V)
+    EqualizationInterval = 150,    // Battery equalization interval (days)
+    EqualizationTime = 151,        // Battery equalization duration (hours)
+    AcChargeStartVolt = 158,       // AC charge start voltage (0.1V)
+    AcChargeEndVolt = 159,         // AC charge end voltage (0.1V)
+    AcChargeStartSocLimit = 160,   // SOC at which AC charging will begin (%)
+    AcChargeEndSocLimit = 161,     // SOC at which AC charging will end (%)
+    BatLowVoltage = 162,           // Battery low alarm voltage (0.1V)
+    BatLowBackVoltage = 163,       // Battery low recovery voltage (0.1V)
+    BatLowSoc = 164,               // Battery low alarm SOC (%)
+    BatLowBackSoc = 165,           // Battery low recovery SOC (%)
+    BatLowToUtilityVoltage = 166,  // Switch to grid voltage (0.1V)
+    BatLowToUtilitySoc = 167,      // Switch to grid SOC (%)
+    AcChargeBatCurrent = 168,      // AC charge current limit (A)
+    OnGridEodVoltage = 169,        // On-grid EOD voltage (0.1V)
+    Register179 = 179,             // Extended function enable flags (uFunctionEn2)
+    GenChgStartVolt = 194,         // Generator charge start voltage (0.1V)
+    GenChgEndVolt = 195,           // Generator charge end voltage (0.1V)
+    GenChgStartSoc = 196,          // Generator charge start SOC (%)
+    GenChgEndSoc = 197,            // Generator charge end SOC (%)
+    MaxGenChgBatCurr = 198,        // Generator charge current limit (A)
+    ChargePriorityEndVolt = 201,   // Charge priority voltage limit (0.1V)
+    ForcedDischgEndVolt = 202,     // Forced discharge voltage limit (0.1V)
+    GridPeakShavingPower = 206,    // Grid peak shaving power (0.1kW)
+    GridPeakShavingSoc = 207,      // Grid peak shaving SOC (%)
+    GridPeakShavingVolt = 208,     // Grid peak shaving voltage (0.1V)
+    SmartLoadOnVolt = 213,         // Smart load on voltage (0.1V)
+    SmartLoadOffVolt = 214,        // Smart load off voltage (0.1V)
+    SmartLoadOnSoc = 215,          // Smart load on SOC (%)
+    SmartLoadOffSoc = 216,         // Smart load off SOC (%)
+    SmartLoadStartPvPower = 217,   // Smart load minimum PV power (0.1kW)
+    GridPeakShavingSoc2 = 218,     // Grid peak shaving SOC 2 (%)
+    GridPeakShavingVolt2 = 219,    // Grid peak shaving voltage 2 (0.1V)
+    AcCoupleStartSoc = 220,        // AC couple start SOC (%)
+    AcCoupleEndSoc = 221,          // AC couple end SOC (%)
+    AcCoupleStartVolt = 222,       // AC couple start voltage (0.1V)
+    AcCoupleEndVolt = 223,         // AC couple end voltage (0.1V)
+    Register233 = 233,             // Extended function enable flags 2 (FuncEn2)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u16)]
 pub enum RegisterBit {
     // Register 21
+    EpsEnable = 1 << 0,
     AcChargeEnable = 1 << 7,
+    SeamlessEpsSwitch = 1 << 8,
+    SetToStandby = 1 << 9,
     ForcedDischargeEnable = 1 << 10,
     ChargePriorityEnable = 1 << 11,
+    FeedInGridEnable = 1 << 15,
 }
 
 // Register21Bits {{{
@@ -1408,6 +1463,12 @@ pub struct Register110Bits {
     pub ub_pv_grid_off_en: String,
     pub ub_run_without_grid: String,
     pub ub_micro_grid_en: String,
+    pub ub_bat_shared: String,
+    pub ub_chg_last_en: String,
+    pub buzzer_en: String,
+    pub ongrid_working_mode: String,
+    pub green_mode_en: String,
+    pub eco_mode_en: String,
 }
 impl Register110Bits {
     fn is_bit_set(data: u16, bit: u16) -> String {
@@ -1423,6 +1484,117 @@ impl Register110Bits {
             ub_pv_grid_off_en: Self::is_bit_set(data, 1 << 0),
             ub_run_without_grid: Self::is_bit_set(data, 1 << 1),
             ub_micro_grid_en: Self::is_bit_set(data, 1 << 2),
+            ub_bat_shared: Self::is_bit_set(data, 1 << 3),
+            ub_chg_last_en: Self::is_bit_set(data, 1 << 4),
+            buzzer_en: Self::is_bit_set(data, 1 << 7),
+            ongrid_working_mode: if (data & (1 << 11)) != 0 {
+                "Charge first".to_string()
+            } else {
+                "Self consumption".to_string()
+            },
+            green_mode_en: Self::is_bit_set(data, 1 << 14),
+            eco_mode_en: Self::is_bit_set(data, 1 << 15),
+        }
+    }
+}
+// }}}
+
+// Register120Bits {{{
+#[derive(Clone, Debug, Serialize)]
+pub struct Register120Bits {
+    pub half_hour_ac_chg_start_en: String,
+    pub ac_charge_type: String,
+    pub discharge_ctrl_type: String,
+    pub ongrid_eod_type: String,
+    pub gen_charge_type: String,
+}
+impl Register120Bits {
+    pub fn new(data: u16) -> Self {
+        let ac_charge_type = match (data >> 1) & 0x07 {
+            0 => "Disabled",
+            1 => "By time",
+            2 => "By voltage",
+            3 => "By SOC",
+            4 => "Voltage + time",
+            5 => "SOC + time",
+            _ => "Disabled",
+        };
+        let discharge_ctrl_type = match (data >> 4) & 0x03 {
+            0 => "By voltage",
+            1 => "By SOC",
+            2 => "Both",
+            _ => "By voltage",
+        };
+        Self {
+            half_hour_ac_chg_start_en: if (data & 1) != 0 { "ON" } else { "OFF" }.to_string(),
+            ac_charge_type: ac_charge_type.to_string(),
+            discharge_ctrl_type: discharge_ctrl_type.to_string(),
+            ongrid_eod_type: if (data & (1 << 6)) != 0 { "By SOC" } else { "By voltage" }.to_string(),
+            gen_charge_type: if (data & (1 << 7)) != 0 { "By SOC" } else { "By voltage" }.to_string(),
+        }
+    }
+}
+// }}}
+
+// Register179Bits {{{
+#[derive(Clone, Debug, Serialize)]
+pub struct Register179Bits {
+    pub ac_ct_direction: String,
+    pub pv_ct_direction: String,
+    pub bat_wakeup_en: String,
+    pub volt_watt_en: String,
+    pub grid_peak_shaving_en: String,
+    pub gen_peak_shaving_en: String,
+    pub ac_couple_ctrl_type: String,
+    pub bat_discharge_ctrl_type: String,
+    pub ac_couple_en: String,
+    pub gen_port_mode: String,
+}
+impl Register179Bits {
+    fn is_bit_set(data: u16, bit: u16) -> String {
+        if (data & bit) == bit {
+            "ON".to_string()
+        } else {
+            "OFF".to_string()
+        }
+    }
+
+    pub fn new(data: u16) -> Self {
+        Self {
+            ac_ct_direction: Self::is_bit_set(data, 1 << 0),
+            pv_ct_direction: Self::is_bit_set(data, 1 << 1),
+            bat_wakeup_en: Self::is_bit_set(data, 1 << 3),
+            volt_watt_en: Self::is_bit_set(data, 1 << 4),
+            grid_peak_shaving_en: Self::is_bit_set(data, 1 << 7),
+            gen_peak_shaving_en: Self::is_bit_set(data, 1 << 8),
+            ac_couple_ctrl_type: if (data & (1 << 9)) != 0 { "By voltage" } else { "By SOC" }.to_string(),
+            bat_discharge_ctrl_type: if (data & (1 << 10)) != 0 { "By voltage" } else { "By SOC" }.to_string(),
+            ac_couple_en: Self::is_bit_set(data, 1 << 11),
+            gen_port_mode: if (data & (1 << 13)) != 0 { "Smart load" } else { "Generator" }.to_string(),
+        }
+    }
+}
+// }}}
+
+// Register233Bits {{{
+#[derive(Clone, Debug, Serialize)]
+pub struct Register233Bits {
+    pub battery_backup_ctrl_en: String,
+    pub sporadic_charge_en: String,
+}
+impl Register233Bits {
+    fn is_bit_set(data: u16, bit: u16) -> String {
+        if (data & bit) == bit {
+            "ON".to_string()
+        } else {
+            "OFF".to_string()
+        }
+    }
+
+    pub fn new(data: u16) -> Self {
+        Self {
+            battery_backup_ctrl_en: Self::is_bit_set(data, 1 << 1),
+            sporadic_charge_en: Self::is_bit_set(data, 1 << 12),
         }
     }
 }
