@@ -219,35 +219,39 @@ pub struct ReadInputAll {
     pub e_gen_day: f64,          // Generator daily energy production (kWh) - Expected range: 0-1000kWh
     #[nom(Parse = "Utils::le_u32_div10")]
     pub e_gen_all: f64,          // Generator total energy production (kWh) - Expected range: 0-999999kWh
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub v_eps_l1: f64,
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub v_eps_l2: f64,
+    #[nom(Ignore)]
     pub p_eps_l1: u16,
+    #[nom(Ignore)]
     pub p_eps_l2: u16,
+    #[nom(Ignore)]
     pub s_eps_l1: u16,
+    #[nom(Ignore)]
     pub s_eps_l2: u16,
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub e_eps_l1_day: f64,
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub e_eps_l2_day: f64,
-    #[nom(Parse = "Utils::le_u32_div10")]
+    #[nom(Ignore)]
     pub e_eps_l1_all: f64,
-    #[nom(Parse = "Utils::le_u32_div10")]
+    #[nom(Ignore)]
     pub e_eps_l2_all: f64,
 
     // Additional EPS values
-    #[nom(Parse = "Utils::le_u16_div100")]
+    #[nom(Ignore)]
     pub i_eps_l1: f64,
-    #[nom(Parse = "Utils::le_u16_div100")]
+    #[nom(Ignore)]
     pub i_eps_l2: f64,
-    #[nom(Parse = "Utils::le_u16_div1000")]
+    #[nom(Ignore)]
     pub pf_eps_l1: f64,
-    #[nom(Parse = "Utils::le_u16_div1000")]
+    #[nom(Ignore)]
     pub pf_eps_l2: f64,
-    #[nom(Parse = "Utils::le_u16_div100")]
+    #[nom(Ignore)]
     pub f_eps_l1: f64,
-    #[nom(Parse = "Utils::le_u16_div100")]
+    #[nom(Ignore)]
     pub f_eps_l2: f64,
 
     // following are for influx capability only
@@ -257,88 +261,135 @@ pub struct ReadInputAll {
     pub datalog: Serial,
 
     // Battery configuration from ReadInput5
+    #[nom(Ignore)]
     pub bat_cell_count: u16,          // Number of battery cells in series
+    #[nom(Ignore)]
     pub bat_parallel_count: u16,      // Number of battery cells in parallel
+    #[nom(Ignore)]
     pub under_freq_start: u16,        // Underfrequency load reduction starting point
+    #[nom(Ignore)]
     pub under_freq_end: u16,          // Underfrequency derating end point
+    #[nom(Ignore)]
     pub under_freq_slope: u16,        // Underfrequency load shedding slope
+    #[nom(Ignore)]
     pub max_compensation: u16,        // Maximum compensation amount for specific load
+    #[nom(Ignore)]
     pub chg_power_pct: u16,          // Charging power percentage setting
+    #[nom(Ignore)]
     pub dischg_power_pct: u16,       // Discharge power percentage setting
+    #[nom(Ignore)]
     pub ac_charge_pct: u16,          // AC charge percentage setting
+    #[nom(Ignore)]
     pub chg_priority_pct: u16,       // Charging priority percentage setting
+    #[nom(Ignore)]
     pub forced_dischg_pct: u16,      // Forced discharge percentage setting
+    #[nom(Ignore)]
     pub inv_power_pct: u16,          // Inverter active power percentage setting
     
     // AC charging parameters
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub ac_chg_start_v: f64,         // AC charging starting battery voltage
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub ac_chg_end_v: f64,           // AC charging cut off battery voltage
+    #[nom(Ignore)]
     pub ac_chg_start_soc: u16,       // AC charging starting SOC
+    #[nom(Ignore)]
     pub ac_chg_end_soc: u16,         // AC charging stops SOC
     
     // Battery voltage parameters
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub bat_low_v: f64,              // Battery undervoltage alarm point
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub bat_low_back_v: f64,         // Battery undervoltage alarm recovery point
+    #[nom(Ignore)]
     pub bat_low_soc: u16,            // Battery undervoltage alarm point (SOC)
+    #[nom(Ignore)]
     pub bat_low_back_soc: u16,       // Battery undervoltage alarm recovery point (SOC)
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub bat_low_utility_v: f64,      // Battery undervoltage to mains voltage point
+    #[nom(Ignore)]
     pub bat_low_utility_soc: u16,    // Battery undervoltage to mains SOC
     
     // Additional parameters
+    #[nom(Ignore)]
     pub ac_chg_curr: u16,            // AC charge current
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub ongrid_eod_v: f64,           // On-grid EOD voltage
     
     // SOC curve data
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub soc_volt1: f64,              // SOC curve voltage point 1
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub soc_volt2: f64,              // SOC curve voltage point 2
+    #[nom(Ignore)]
     pub soc_pct1: u16,               // SOC percentage point 1
+    #[nom(Ignore)]
     pub soc_pct2: u16,               // SOC percentage point 2
+    #[nom(Ignore)]
     pub soc_inner_resistance: u16,    // SOC curve inner resistance
     
     // Power settings
+    #[nom(Ignore)]
     pub max_grid_input_power: u16,    // Maximum grid input power
+    #[nom(Ignore)]
     pub gen_rated_power: u16,         // Generator rated power
     
     // Function enable flags
+    #[nom(Ignore)]
     pub function_bit_flags: u16,      // Combined function enable flags
     
     // Additional settings
+    #[nom(Ignore)]
     pub afci_threshold: u16,          // AFCI arc threshold
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub volt_watt_v1: f64,           // Volt-Watt V1 setting
-    #[nom(Parse = "Utils::le_u16_div10")]
+    #[nom(Ignore)]
     pub volt_watt_v2: f64,           // Volt-Watt V2 setting
+    #[nom(Ignore)]
     pub volt_watt_delay: u16,        // Volt-Watt delay time
+    #[nom(Ignore)]
     pub volt_watt_p2: u16,           // Volt-Watt P2 setting
 
     // Extended system parameters from ReadInput6
+    #[nom(Ignore)]
     pub grid_voltage_high_pure: u16,     // Grid voltage high pure limit
+    #[nom(Ignore)]
     pub grid_voltage_low_pure: u16,      // Grid voltage low pure limit
+    #[nom(Ignore)]
     pub grid_freq_high_pure: u16,        // Grid frequency high pure limit
+    #[nom(Ignore)]
     pub grid_freq_low_pure: u16,         // Grid frequency low pure limit
+    #[nom(Ignore)]
     pub grid_volt_high_delay: u16,       // Grid voltage high delay
+    #[nom(Ignore)]
     pub grid_volt_low_delay: u16,        // Grid voltage low delay
+    #[nom(Ignore)]
     pub grid_freq_high_delay: u16,       // Grid frequency high delay
+    #[nom(Ignore)]
     pub grid_freq_low_delay: u16,        // Grid frequency low delay
+    #[nom(Ignore)]
     pub grid_volt_recover_high: u16,     // Grid voltage recover high threshold
+    #[nom(Ignore)]
     pub grid_volt_recover_low: u16,      // Grid voltage recover low threshold
+    #[nom(Ignore)]
     pub grid_freq_recover_high: u16,     // Grid frequency recover high threshold
+    #[nom(Ignore)]
     pub grid_freq_recover_low: u16,      // Grid frequency recover low threshold
+    #[nom(Ignore)]
     pub grid_volt_recover_delay: u16,    // Grid voltage recover delay
+    #[nom(Ignore)]
     pub grid_freq_recover_delay: u16,    // Grid frequency recover delay
+    #[nom(Ignore)]
     pub island_detect_time: u16,         // Island detection time
+    #[nom(Ignore)]
     pub pf_cmd_memory_en: u16,           // Power factor command memory enable
+    #[nom(Ignore)]
     pub pf_cmd_memory_pf: u16,           // Power factor command memory value
+    #[nom(Ignore)]
     pub pf_cmd_memory_p_ref: u16,        // Power factor command memory reference power
+    #[nom(Ignore)]
     pub pf_cmd_memory_v_ref: u16,        // Power factor command memory reference voltage
+    #[nom(Ignore)]
     pub pf_cmd_memory_q_ref: u16,        // Power factor command memory reference reactive power
 }
 
@@ -619,21 +670,11 @@ pub struct ReadInput2 {
     // Result code from auto-test
     pub auto_test_result: u16,
 
-    // Battery information
-    // Battery manufacturer/brand identifier
-    // Known values:
-    // 0: Unknown/Not configured
-    // 1: Pylon
-    // 2: Dyness
-    // Add other known values as they are discovered
+    // Battery information (register 80 belongs to ReadInput3, so ignored when parsing 80-byte block 2)
+    #[nom(Ignore)]
     pub bat_brand: u8,
     
-    // Battery communication protocol type
-    // Known values:
-    // 0: Unknown/Not configured
-    // 1: RS485
-    // 2: CAN
-    // Add other known values as they are discovered
+    #[nom(Ignore)]
     pub bat_com_type: u8,
 
     // Timestamp of reading

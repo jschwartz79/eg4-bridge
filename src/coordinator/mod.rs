@@ -493,9 +493,12 @@ impl Coordinator {
                 msg = from_mqtt_rx.recv() => {
                     match msg {
                         Ok(mqtt::ChannelData::Message(message)) => {
-                            if let Err(e) = self.process_message(message).await {
-                                error!("Failed to process MQTT command message: {}", e);
-                            }
+                            let coord = self.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = coord.process_message(message).await {
+                                    error!("Failed to process MQTT command message: {}", e);
+                                }
+                            });
                         }
                         Ok(mqtt::ChannelData::Shutdown) => {
                             debug!("from_mqtt shutdown");
