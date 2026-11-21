@@ -771,13 +771,21 @@ pub struct ReadInput3 {
     pub i_bat_3: f64,
     #[nom(Parse = "Utils::le_u16_div100")]
     pub i_bat_4: f64,
+    #[nom(Ignore)]
     pub soc_1: u8,
+    #[nom(Ignore)]
     pub soc_2: u8,
+    #[nom(Ignore)]
     pub soc_3: u8,
+    #[nom(Ignore)]
     pub soc_4: u8,
+    #[nom(Ignore)]
     pub soh_1: u8,
+    #[nom(Ignore)]
     pub soh_2: u8,
+    #[nom(Ignore)]
     pub soh_3: u8,
+    #[nom(Ignore)]
     pub soh_4: u8,
 
     // following are for influx capability only
